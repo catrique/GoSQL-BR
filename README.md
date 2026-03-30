@@ -1,3 +1,4 @@
+```markdown
 # GoSQL-BR
 
 O **GoSQL-BR** é um interpretador de consultas SQL com comandos em português, desenvolvido em Go. O objetivo do projeto é processar arquivos CSV de forma simples através de um terminal interativo.
@@ -13,16 +14,29 @@ O sistema foi estruturado seguindo as etapas de um compilador real: análise lé
    go run cmd/main.go
    ```
 
-### Comandos Suportados
+### Guia de Comandos
 
-Após iniciar o programa, você pode utilizar os seguintes comandos no prompt:
+Abaixo estão todos os comandos suportados pelo interpretador:
 
-* **USE**: Define o arquivo de dados que será utilizado.
-    * Exemplo: `USE dados.csv`
-* **COLUNAS**: Lista todos os cabeçalhos identificados no arquivo carregado.
-* **PEGUE**: Seleciona colunas específicas ou todas utilizando `*`.
-    * Exemplo: `PEGUE Nome, Salario QUANDO Data == '21/10/2025'`
-    * Exemplo: `PEGUE * QUANDO Salario > 5000`
+| Comando | Descrição | Exemplo de Uso |
+| :--- | :--- | :--- |
+| **USE** | Define e carrega o arquivo CSV para a memória. | `USE dados.csv` |
+| **COLUNAS** | Exibe todos os nomes de colunas (cabeçalho) do arquivo atual. | `COLUNAS` |
+| **PEGUE** | Seleciona colunas específicas de cada linha. | `PEGUE Nome, Cargo` |
+| **PEGUE \*** | Seleciona todas as colunas disponíveis no arquivo. | `PEGUE *` |
+| **QUANDO** | Filtra os resultados baseados em uma condição lógica. | `PEGUE Nome QUANDO Idade > 25` |
+| **sair** | Encerra o terminal interativo do GoSQL-BR. | `sair` |
+
+### Operadores de Comparação
+
+Ao utilizar a cláusula **QUANDO**, você pode usar os seguintes operadores:
+
+* `==` : Igual a
+* `!=` : Diferente de
+* `>`  : Maior que
+* `<`  : Menor que
+* `>=` : Maior ou igual a
+* `<=` : Menor ou igual a
 
 ### Estrutura do Código
 
@@ -32,3 +46,4 @@ Após iniciar o programa, você pode utilizar os seguintes comandos no prompt:
 * **internal/ast/**: Define as estruturas de dados que representam os comandos.
 * **internal/engine/**: Coordena a execução dos comandos validados.
 * **internal/storage/**: Gerencia a leitura física e filtragem dos arquivos CSV.
+```
