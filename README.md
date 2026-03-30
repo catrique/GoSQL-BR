@@ -1,4 +1,3 @@
-```markdown
 # GoSQL-BR
 
 O **GoSQL-BR** é um interpretador de consultas SQL com comandos em português, desenvolvido em Go. O objetivo do projeto é processar arquivos CSV de forma simples através de um terminal interativo.
