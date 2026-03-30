@@ -1,4 +1,3 @@
-```markdown
 # GoSQL-BR
 
 O **GoSQL-BR** é um interpretador de consultas SQL com comandos em português, desenvolvido em Go. O objetivo do projeto é processar arquivos CSV de forma simples através de um terminal interativo.
@@ -46,4 +45,3 @@ Ao utilizar a cláusula **QUANDO**, você pode usar os seguintes operadores:
 * **internal/ast/**: Define as estruturas de dados que representam os comandos.
 * **internal/engine/**: Coordena a execução dos comandos validados.
 * **internal/storage/**: Gerencia a leitura física e filtragem dos arquivos CSV.
-```
