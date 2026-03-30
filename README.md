@@ -36,7 +36,12 @@ Ao utilizar a cláusula **QUANDO**, você pode usar os seguintes operadores:
 * `<`  : Menor que
 * `>=` : Maior ou igual a
 * `<=` : Menor ou igual a
-
+* `EM / DENTRO` : Verifica se um valor pertence a uma lista. 
+  * *Exemplo:* `PEGUE * QUANDO municipio DENTRO (311860, 310620)`
+### Operadores Lógicos e Agrupamento
+* `E \ OU` : Permite combinar múltiplas condições.
+* `( )` : Define a precedência das operações, garantindo que a lógica interna seja resolvida primeiro.
+ * *Exemplo:* `PEGUE nome QUANDO resultado == 'Inapto' E (data >= '15/10/2025' E data <= '24/10/2025')`
 ### Estrutura do Código
 
 * **cmd/**: Contém o ponto de entrada (main.go) e a interface de linha de comando.
