@@ -32,4 +32,3 @@ Após iniciar o programa, você pode utilizar os seguintes comandos no prompt:
 * **internal/ast/**: Define as estruturas de dados que representam os comandos.
 * **internal/engine/**: Coordena a execução dos comandos validados.
 * **internal/storage/**: Gerencia a leitura física e filtragem dos arquivos CSV.
-```
