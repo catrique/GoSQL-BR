@@ -6,6 +6,14 @@ import (
 	"gosql-br/internal/lexer"
 )
 
+const (
+	_ int = iota
+	LOWEST
+	OR      // OU
+	AND     // E
+	COMPARE // ==, !=, >, <, EM/DENTRO
+)
+
 type Parser struct {
 	l         *lexer.Lexer
 	curToken  lexer.Token
@@ -14,14 +22,9 @@ type Parser struct {
 }
 
 func New(l *lexer.Lexer) *Parser {
-	p := &Parser{
-		l:      l,
-		errors: []string{},
-	}
-
+	p := &Parser{l: l, errors: []string{}}
 	p.nextToken()
 	p.nextToken()
-
 	return p
 }
 
@@ -31,9 +34,7 @@ func (p *Parser) nextToken() {
 }
 
 func (p *Parser) ParseProgram() *ast.Program {
-	program := &ast.Program{}
-	program.Statements = []ast.Statement{}
-
+	program := &ast.Program{Statements: []ast.Statement{}}
 	for p.curToken.Type != lexer.EOF {
 		stmt := p.parseStatement()
 		if stmt != nil {
@@ -41,7 +42,6 @@ func (p *Parser) ParseProgram() *ast.Program {
 		}
 		p.nextToken()
 	}
-
 	return program
 }
 
@@ -62,101 +62,164 @@ func (p *Parser) parseSelectStatement() *ast.SelectStatement {
 	if p.peekTokenIs(lexer.ASTERISK) {
 		p.nextToken()
 		stmt.Columns = append(stmt.Columns, "*")
-		return stmt
-	}
-
-	if !p.expectPeek(lexer.IDENT) {
-		return nil
-	}
-	stmt.Columns = append(stmt.Columns, p.curToken.Literal)
-
-	for p.peekTokenIs(lexer.COMMA) {
-		p.nextToken()
-
+	} else {
 		if !p.expectPeek(lexer.IDENT) {
 			return nil
 		}
-
 		stmt.Columns = append(stmt.Columns, p.curToken.Literal)
+		for p.peekTokenIs(lexer.COMMA) {
+			p.nextToken()
+			if !p.expectPeek(lexer.IDENT) {
+				return nil
+			}
+			stmt.Columns = append(stmt.Columns, p.curToken.Literal)
+		}
 	}
+
 	if p.peekTokenIs(lexer.WHERE) {
-		p.nextToken()
-		p.nextToken()
-		stmt.Condition = p.parseCondition()
+		p.nextToken() // consome o token atual
+		p.nextToken() // consome o WHERE
+		stmt.Condition = p.parseExpression(LOWEST)
 	}
 
 	return stmt
 }
 
-func (p *Parser) parseUseStatement() *ast.UseStatement {
-	stmt := &ast.UseStatement{Token: p.curToken}
+// Hierarquia de expressões para lidar com E, OU e Parênteses
+func (p *Parser) parseExpression(precedence int) ast.Expression {
+	var left ast.Expression
 
-	if !p.expectPeek(lexer.IDENT) {
-		return nil
-	}
+	// CASO 1: Início com Parênteses (Agrupamento)
+	if p.curTokenIs(lexer.LPAREN) {
+		p.nextToken() // Consome '('
+		left = p.parseExpression(LOWEST)
 
-	stmt.File = p.curToken.Literal
-
-	if p.peekTokenIs(lexer.DOT) {
-		p.nextToken()
-		p.nextToken()
-		stmt.File += "." + p.curToken.Literal
-	}
-
-	return stmt
-}
-
-func (p *Parser) curTokenIs(t lexer.TokenType) bool {
-	return p.curToken.Type == t
-}
-
-func (p *Parser) peekTokenIs(t lexer.TokenType) bool {
-	return p.peekToken.Type == t
-}
-
-func (p *Parser) expectPeek(t lexer.TokenType) bool {
-	if p.peekTokenIs(t) {
-		p.nextToken()
-		return true
+		// Após resolver o interior, o PRÓXIMO deve ser ')'
+		if !p.expectPeek(lexer.RPAREN) {
+			return nil
+		}
+		// Aqui o curToken agora é ')'
 	} else {
-		p.peekError(t)
-		return false
+		// CASO 2: Comparação normal (coluna == valor)
+		left = p.parseComparison()
 	}
+
+	// LOOP DE CONEXÃO: Tenta unir o 'left' com E/OU enquanto a prioridade permitir
+	// Importante: o loop olha o PEEK (próximo) para decidir se continua
+	for !p.peekTokenIs(lexer.EOF) && !p.peekTokenIs(lexer.RPAREN) && precedence < p.getPrecedence(p.peekToken.Type) {
+		if !p.peekTokenIs(lexer.AND) && !p.peekTokenIs(lexer.OR) {
+			break
+		}
+
+		p.nextToken() // Move para o E ou OU
+		left = p.parseLogicalExpression(left)
+	}
+
+	return left
 }
 
-func (p *Parser) peekError(t lexer.TokenType) {
-	msg := fmt.Sprintf("esperava que o próximo token fosse %d, mas obteve %d", t, p.peekToken.Type)
-	p.errors = append(p.errors, msg)
-}
-
-func (p *Parser) parseCondition() *ast.Condition {
-	cond := &ast.Condition{}
-
+func (p *Parser) parseComparison() ast.Expression {
 	if !p.curTokenIs(lexer.IDENT) {
 		return nil
 	}
-	cond.Left = p.curToken.Literal
+
+	expr := &ast.ComparisonExpression{Left: p.curToken.Literal}
 	p.nextToken()
 
 	if !p.isOperator(p.curToken.Type) {
 		return nil
 	}
-	cond.Operator = p.curToken.Literal
+	expr.Operator = p.curToken.Literal
+	opType := p.curToken.Type
 	p.nextToken()
 
-	if p.curToken.Type != lexer.INT && p.curToken.Type != lexer.STRING {
+	if opType == lexer.IN {
+		expr.Right = p.parseList()
+	} else {
+		expr.Right = p.curToken.Literal
+	}
+
+	return expr
+}
+
+func (p *Parser) parseLogicalExpression(left ast.Expression) ast.Expression {
+	expr := &ast.LogicalExpression{
+		Left:     left,
+		Operator: p.curToken.Literal,
+	}
+
+	precedence := p.getPrecedence(p.curToken.Type)
+	p.nextToken() // Move para o início da próxima expressão (depois do E/OU)
+	expr.Right = p.parseExpression(precedence)
+
+	return expr
+}
+
+func (p *Parser) parseList() []string {
+	var list []string
+	if !p.curTokenIs(lexer.LPAREN) {
 		return nil
 	}
-	cond.Right = p.curToken.Literal
+	p.nextToken()
 
-	return cond
+	list = append(list, p.curToken.Literal)
+	for p.peekTokenIs(lexer.COMMA) {
+		p.nextToken()
+		p.nextToken()
+		list = append(list, p.curToken.Literal)
+	}
+
+	if !p.expectPeek(lexer.RPAREN) {
+		return nil
+	}
+	return list
+}
+
+func (p *Parser) parseUseStatement() *ast.UseStatement {
+	stmt := &ast.UseStatement{Token: p.curToken}
+	if !p.expectPeek(lexer.IDENT) {
+		return nil
+	}
+	stmt.File = p.curToken.Literal
+	if p.peekTokenIs(lexer.DOT) {
+		p.nextToken()
+		p.nextToken()
+		stmt.File += "." + p.curToken.Literal
+	}
+	return stmt
+}
+
+// Auxiliares
+func (p *Parser) getPrecedence(t lexer.TokenType) int {
+	switch t {
+	case lexer.OR:
+		return OR
+	case lexer.AND:
+		return AND
+	default:
+		return LOWEST
+	}
+}
+
+func (p *Parser) curTokenIs(t lexer.TokenType) bool  { return p.curToken.Type == t }
+func (p *Parser) peekTokenIs(t lexer.TokenType) bool { return p.peekToken.Type == t }
+func (p *Parser) expectPeek(t lexer.TokenType) bool {
+	if p.peekTokenIs(t) {
+		p.nextToken()
+		return true
+	}
+	p.peekError(t)
+	return false
+}
+
+func (p *Parser) peekError(t lexer.TokenType) {
+	msg := fmt.Sprintf("esperava %d, obteve %d", t, p.peekToken.Type)
+	p.errors = append(p.errors, msg)
 }
 
 func (p *Parser) isOperator(t lexer.TokenType) bool {
 	return t == lexer.GT || t == lexer.GE || t == lexer.LT ||
-		t == lexer.LE || t == lexer.EQ || t == lexer.NE
+		t == lexer.LE || t == lexer.EQ || t == lexer.NE || t == lexer.IN
 }
 
-func (p *Parser) Errors() []string {
-	return p.errors
-}
+func (p *Parser) Errors() []string { return p.errors }

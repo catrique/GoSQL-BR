@@ -9,6 +9,7 @@ const (
 	IDENT
 	INT
 	FLOAT
+	STRING
 
 	ASSIGN
 	GT
@@ -24,11 +25,13 @@ const (
 	FROM
 	AND
 	OR
+	IN
 
 	COMMA
 	DOT
 	ASTERISK
-	STRING
+	LPAREN
+	RPAREN
 )
 
 type Token struct {
@@ -43,6 +46,8 @@ var keywords = map[string]TokenType{
 	"DE":     FROM,
 	"E":      AND,
 	"OU":     OR,
+	"EM":     IN,
+	"DENTRO": IN,
 }
 
 func LookupIdent(ident string) TokenType {

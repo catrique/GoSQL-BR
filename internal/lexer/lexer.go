@@ -120,7 +120,12 @@ func (l *Lexer) NextToken() Token {
 	case '\'':
 		tok.Type = STRING
 		tok.Literal = l.readString()
+		l.ReadChar()
 		return tok
+	case '(':
+		tok = Token{Type: LPAREN, Literal: string(l.Ch)}
+	case ')':
+		tok = Token{Type: RPAREN, Literal: string(l.Ch)}
 	default:
 		if isLetter(l.Ch) {
 			tok.Literal = l.readIdentifier()
