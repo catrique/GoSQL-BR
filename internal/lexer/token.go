@@ -28,17 +28,18 @@ const (
 	IN
 
 	// Funções de agregação
-	COUNT      // CONTE
-	DISTINCT   // DIFERENTES
-	ORDER_BY   // ORDENE
-	BY         // POR
-	IGNORE     // IGNORAR
-	EMPTY      // VAZIO
-	MAX_NUM    // MAX
-	MIN_NUM    // MIN
-	MAX_DATE   // MAX_DATA
-	MIN_DATE   // MIN_DATA
-	PERCENTAGE // PORCENTAGEM
+	COUNT        // CONTE
+	DISTINCT     // DIFERENTES
+	ORDER_BY     // ORDENE
+	BY           // POR
+	IGNORE       // IGNORAR
+	EMPTY        // VAZIO
+	MAX_NUM      // MAX
+	MIN_NUM      // MIN
+	MAX_DATE     // MAX_DATA
+	MIN_DATE     // MIN_DATA
+	PERCENTAGE   // PORCENTAGEM
+	DAYS_BETWEEN // DIAS_ENTRE
 
 	COMMA
 	DOT
@@ -72,6 +73,7 @@ var keywords = map[string]TokenType{
 	"MAX_DATA":    MAX_DATE,
 	"MIN_DATA":    MIN_DATE,
 	"PORCENTAGEM": PERCENTAGE,
+	"DIAS_ENTRE":  DAYS_BETWEEN,
 }
 
 func LookupIdent(ident string) TokenType {

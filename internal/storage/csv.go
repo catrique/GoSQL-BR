@@ -229,6 +229,42 @@ func (s *CSVStorage) evaluate(row []string, expr ast.Expression) bool {
 		}
 	case *ast.ComparisonExpression:
 		return s.evaluateComparison(row, e)
+	case *ast.DaysBetweenExpression:
+		return s.evaluateDaysBetween(row, e)
+	}
+	return false
+}
+
+func (s *CSVStorage) evaluateDaysBetween(row []string, expr *ast.DaysBetweenExpression) bool {
+	idx1, ok1 := s.Header[strings.ToLower(expr.Column1)]
+	idx2, ok2 := s.Header[strings.ToLower(expr.Column2)]
+	if !ok1 || !ok2 {
+		return false
+	}
+
+	dias := DiasEntre(row[idx1], row[idx2])
+	if dias == -1 {
+		return false
+	}
+
+	limiar, err := strconv.Atoi(strings.TrimSpace(expr.Value))
+	if err != nil {
+		return false
+	}
+
+	switch expr.Operator {
+	case ">":
+		return dias > limiar
+	case ">=":
+		return dias >= limiar
+	case "<":
+		return dias < limiar
+	case "<=":
+		return dias <= limiar
+	case "==":
+		return dias == limiar
+	case "!=":
+		return dias != limiar
 	}
 	return false
 }

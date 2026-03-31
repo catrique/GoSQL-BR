@@ -134,3 +134,23 @@ func Porcentagem(filtradas [][]string, totalLinhas [][]string) float64 {
 	}
 	return (float64(len(filtradas)) / float64(total)) * 100
 }
+
+func DiasEntre(val1, val2 string) int {
+	val1 = strings.TrimSpace(val1)
+	val2 = strings.TrimSpace(val2)
+	if val1 == "" || val2 == "" {
+		return -1
+	}
+
+	data1, err1 := time.Parse(layoutBR, val1)
+	data2, err2 := time.Parse(layoutBR, val2)
+	if err1 != nil || err2 != nil {
+		return -1
+	}
+
+	if data1.After(data2) {
+		data1, data2 = data2, data1
+	}
+
+	return int(data2.Sub(data1).Hours() / 24)
+}

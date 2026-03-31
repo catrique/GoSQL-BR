@@ -9,9 +9,9 @@ import (
 const (
 	_ int = iota
 	LOWEST
-	OR
-	AND
-	COMPARE
+	OR      // OU
+	AND     // E
+	COMPARE // ==, !=, >, <, EM/DENTRO
 )
 
 type Parser struct {
@@ -85,7 +85,7 @@ func (p *Parser) parseSelectStatement() *ast.SelectStatement {
 	}
 
 	if p.peekTokenIs(lexer.IGNORE) {
-		p.nextToken() // consome IGNORAR
+		p.nextToken()
 		if !p.expectPeek(lexer.EMPTY) {
 			return nil
 		}
@@ -201,6 +201,8 @@ func (p *Parser) parseExpression(precedence int) ast.Expression {
 		if !p.expectPeek(lexer.RPAREN) {
 			return nil
 		}
+	} else if p.curToken.Type == lexer.DAYS_BETWEEN {
+		left = p.parseDaysBetween()
 	} else {
 		left = p.parseComparison()
 	}
@@ -258,6 +260,42 @@ func (p *Parser) parseComparison() ast.Expression {
 	} else {
 		expr.Right = p.curToken.Literal
 	}
+
+	return expr
+}
+
+func (p *Parser) parseDaysBetween() ast.Expression {
+	expr := &ast.DaysBetweenExpression{}
+
+	if !p.expectPeek(lexer.LPAREN) {
+		return nil
+	}
+	if !p.expectPeek(lexer.IDENT) {
+		return nil
+	}
+	expr.Column1 = p.curToken.Literal
+
+	if !p.expectPeek(lexer.COMMA) {
+		return nil
+	}
+	if !p.expectPeek(lexer.IDENT) {
+		return nil
+	}
+	expr.Column2 = p.curToken.Literal
+
+	if !p.expectPeek(lexer.RPAREN) {
+		return nil
+	}
+
+	p.nextToken()
+	if !p.isOperator(p.curToken.Type) {
+		p.errors = append(p.errors, fmt.Sprintf("DIAS_ENTRE: esperava operador, obteve '%s'", p.curToken.Literal))
+		return nil
+	}
+	expr.Operator = p.curToken.Literal
+
+	p.nextToken()
+	expr.Value = p.curToken.Literal
 
 	return expr
 }
