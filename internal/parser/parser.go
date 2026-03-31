@@ -9,9 +9,9 @@ import (
 const (
 	_ int = iota
 	LOWEST
-	OR      // OU
-	AND     // E
-	COMPARE // ==, !=, >, <, EM/DENTRO
+	OR
+	AND
+	COMPARE
 )
 
 type Parser struct {
@@ -63,55 +63,158 @@ func (p *Parser) parseSelectStatement() *ast.SelectStatement {
 		p.nextToken()
 		stmt.Columns = append(stmt.Columns, "*")
 	} else {
-		if !p.expectPeek(lexer.IDENT) {
+		p.nextToken()
+		if err := p.readColumnOrFunction(stmt); err != nil {
+			p.errors = append(p.errors, err.Error())
 			return nil
 		}
-		stmt.Columns = append(stmt.Columns, p.curToken.Literal)
 		for p.peekTokenIs(lexer.COMMA) {
-			p.nextToken()
-			if !p.expectPeek(lexer.IDENT) {
+			p.nextToken() // consome ','
+			p.nextToken() // move para próximo item
+			if err := p.readColumnOrFunction(stmt); err != nil {
+				p.errors = append(p.errors, err.Error())
 				return nil
 			}
-			stmt.Columns = append(stmt.Columns, p.curToken.Literal)
 		}
 	}
 
 	if p.peekTokenIs(lexer.WHERE) {
-		p.nextToken() // consome o token atual
-		p.nextToken() // consome o WHERE
+		p.nextToken()
+		p.nextToken()
 		stmt.Condition = p.parseExpression(LOWEST)
+	}
+
+	if p.peekTokenIs(lexer.IGNORE) {
+		p.nextToken() // consome IGNORAR
+		if !p.expectPeek(lexer.EMPTY) {
+			return nil
+		}
+		if !p.expectPeek(lexer.IDENT) {
+			return nil
+		}
+		stmt.IgnoreEmpty = p.curToken.Literal
+	}
+
+	if p.peekTokenIs(lexer.ORDER_BY) {
+		p.nextToken()
+		if !p.expectPeek(lexer.BY) {
+			return nil
+		}
+		if !p.expectPeek(lexer.IDENT) {
+			return nil
+		}
+		stmt.OrderBy = p.curToken.Literal
 	}
 
 	return stmt
 }
 
-// Hierarquia de expressões para lidar com E, OU e Parênteses
+func (p *Parser) readColumnOrFunction(stmt *ast.SelectStatement) error {
+	switch p.curToken.Type {
+	case lexer.COUNT:
+		fn, err := p.parseFunctionCall("CONTE")
+		if err != nil {
+			return err
+		}
+		stmt.Functions = append(stmt.Functions, *fn)
+
+	case lexer.DISTINCT:
+		fn, err := p.parseFunctionCall("DIFERENTES")
+		if err != nil {
+			return err
+		}
+		stmt.Functions = append(stmt.Functions, *fn)
+
+	case lexer.MAX_NUM:
+		fn, err := p.parseFunctionCall("MAX")
+		if err != nil {
+			return err
+		}
+		stmt.Functions = append(stmt.Functions, *fn)
+
+	case lexer.MIN_NUM:
+		fn, err := p.parseFunctionCall("MIN")
+		if err != nil {
+			return err
+		}
+		stmt.Functions = append(stmt.Functions, *fn)
+
+	case lexer.MAX_DATE:
+		fn, err := p.parseFunctionCall("MAX_DATA")
+		if err != nil {
+			return err
+		}
+		stmt.Functions = append(stmt.Functions, *fn)
+
+	case lexer.MIN_DATE:
+		fn, err := p.parseFunctionCall("MIN_DATA")
+		if err != nil {
+			return err
+		}
+		stmt.Functions = append(stmt.Functions, *fn)
+
+	case lexer.PERCENTAGE:
+		stmt.Functions = append(stmt.Functions, ast.FunctionCall{Name: "PORCENTAGEM"})
+
+	case lexer.IDENT:
+		stmt.Columns = append(stmt.Columns, p.curToken.Literal)
+
+	default:
+		return fmt.Errorf("esperava coluna ou função, obteve '%s'", p.curToken.Literal)
+	}
+	return nil
+}
+
+func (p *Parser) parseFunctionCall(name string) (*ast.FunctionCall, error) {
+	fn := &ast.FunctionCall{Name: name}
+
+	if !p.peekTokenIs(lexer.LPAREN) {
+		return fn, nil
+	}
+	p.nextToken()
+	p.nextToken()
+
+	if p.curToken.Type == lexer.DISTINCT {
+		inner, err := p.parseFunctionCall("DIFERENTES")
+		if err != nil {
+			return nil, err
+		}
+		fn.Inner = inner
+	} else if p.curTokenIs(lexer.IDENT) {
+		fn.Column = p.curToken.Literal
+	} else {
+		return nil, fmt.Errorf("argumento inválido para %s", name)
+	}
+
+	if !p.expectPeek(lexer.RPAREN) {
+		return nil, fmt.Errorf("esperava ')' após argumento de %s", name)
+	}
+	return fn, nil
+}
+
 func (p *Parser) parseExpression(precedence int) ast.Expression {
 	var left ast.Expression
 
-	// CASO 1: Início com Parênteses (Agrupamento)
 	if p.curTokenIs(lexer.LPAREN) {
-		p.nextToken() // Consome '('
+		p.nextToken()
 		left = p.parseExpression(LOWEST)
-
-		// Após resolver o interior, o PRÓXIMO deve ser ')'
 		if !p.expectPeek(lexer.RPAREN) {
 			return nil
 		}
-		// Aqui o curToken agora é ')'
 	} else {
-		// CASO 2: Comparação normal (coluna == valor)
 		left = p.parseComparison()
 	}
 
-	// LOOP DE CONEXÃO: Tenta unir o 'left' com E/OU enquanto a prioridade permitir
-	// Importante: o loop olha o PEEK (próximo) para decidir se continua
-	for !p.peekTokenIs(lexer.EOF) && !p.peekTokenIs(lexer.RPAREN) && precedence < p.getPrecedence(p.peekToken.Type) {
+	for !p.peekTokenIs(lexer.EOF) &&
+		!p.peekTokenIs(lexer.RPAREN) &&
+		!p.peekTokenIs(lexer.IGNORE) &&
+		!p.peekTokenIs(lexer.ORDER_BY) &&
+		precedence < p.getPrecedence(p.peekToken.Type) {
+
 		if !p.peekTokenIs(lexer.AND) && !p.peekTokenIs(lexer.OR) {
 			break
 		}
-
-		p.nextToken() // Move para o E ou OU
+		p.nextToken()
 		left = p.parseLogicalExpression(left)
 	}
 
@@ -125,6 +228,23 @@ func (p *Parser) parseComparison() ast.Expression {
 
 	expr := &ast.ComparisonExpression{Left: p.curToken.Literal}
 	p.nextToken()
+
+	if p.curTokenIs(lexer.EQ) || p.curTokenIs(lexer.NE) {
+		op := p.curToken.Literal
+		p.nextToken()
+		if p.curToken.Type == lexer.EMPTY {
+			if op == "==" {
+				expr.Operator = "VAZIO"
+			} else {
+				expr.Operator = "NAO_VAZIO"
+			}
+			expr.Right = nil
+			return expr
+		}
+		expr.Operator = op
+		expr.Right = p.curToken.Literal
+		return expr
+	}
 
 	if !p.isOperator(p.curToken.Type) {
 		return nil
@@ -147,11 +267,9 @@ func (p *Parser) parseLogicalExpression(left ast.Expression) ast.Expression {
 		Left:     left,
 		Operator: p.curToken.Literal,
 	}
-
 	precedence := p.getPrecedence(p.curToken.Type)
-	p.nextToken() // Move para o início da próxima expressão (depois do E/OU)
+	p.nextToken()
 	expr.Right = p.parseExpression(precedence)
-
 	return expr
 }
 
@@ -161,14 +279,12 @@ func (p *Parser) parseList() []string {
 		return nil
 	}
 	p.nextToken()
-
 	list = append(list, p.curToken.Literal)
 	for p.peekTokenIs(lexer.COMMA) {
 		p.nextToken()
 		p.nextToken()
 		list = append(list, p.curToken.Literal)
 	}
-
 	if !p.expectPeek(lexer.RPAREN) {
 		return nil
 	}
@@ -189,7 +305,6 @@ func (p *Parser) parseUseStatement() *ast.UseStatement {
 	return stmt
 }
 
-// Auxiliares
 func (p *Parser) getPrecedence(t lexer.TokenType) int {
 	switch t {
 	case lexer.OR:
@@ -203,6 +318,7 @@ func (p *Parser) getPrecedence(t lexer.TokenType) int {
 
 func (p *Parser) curTokenIs(t lexer.TokenType) bool  { return p.curToken.Type == t }
 func (p *Parser) peekTokenIs(t lexer.TokenType) bool { return p.peekToken.Type == t }
+
 func (p *Parser) expectPeek(t lexer.TokenType) bool {
 	if p.peekTokenIs(t) {
 		p.nextToken()
@@ -213,7 +329,7 @@ func (p *Parser) expectPeek(t lexer.TokenType) bool {
 }
 
 func (p *Parser) peekError(t lexer.TokenType) {
-	msg := fmt.Sprintf("esperava %d, obteve %d", t, p.peekToken.Type)
+	msg := fmt.Sprintf("esperava token %d, obteve '%s' (%d)", t, p.peekToken.Literal, p.peekToken.Type)
 	p.errors = append(p.errors, msg)
 }
 

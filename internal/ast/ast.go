@@ -35,35 +35,38 @@ type UseStatement struct {
 func (us *UseStatement) statementNode()       {}
 func (us *UseStatement) TokenLiteral() string { return us.Token.Literal }
 
+type SelectStatement struct {
+	Token       lexer.Token
+	Columns     []string
+	Functions   []FunctionCall
+	Condition   Expression
+	OrderBy     string
+	IgnoreEmpty string
+}
+
 func (ss *SelectStatement) statementNode()       {}
 func (ss *SelectStatement) TokenLiteral() string { return ss.Token.Literal }
 
-type SelectStatement struct {
-	Token     lexer.Token
-	Columns   []string
-	Condition Expression
-}
-
-type Condition struct {
+type ComparisonExpression struct {
 	Left     string
 	Operator string
-	Right    string
-}
-
-type ComparisonExpression struct {
-	Left     string // Nome da coluna
-	Operator string // >, <, ==, !=, DENTRO
-	Right    any    // Pode ser uma string, int ou uma lista []string para o DENTRO
+	Right    any
 }
 
 func (ce *ComparisonExpression) TokenLiteral() string { return ce.Operator }
 func (ce *ComparisonExpression) expressionNode()      {}
 
 type LogicalExpression struct {
-	Left     Expression // Pode ser uma Comparison ou outra Logical
-	Operator string     // E, OU
+	Left     Expression
+	Operator string
 	Right    Expression
 }
 
 func (le *LogicalExpression) TokenLiteral() string { return le.Operator }
 func (le *LogicalExpression) expressionNode()      {}
+
+type FunctionCall struct {
+	Name   string
+	Column string
+	Inner  *FunctionCall
+}

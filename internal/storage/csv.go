@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"gosql-br/internal/ast"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -42,58 +43,193 @@ func NewCSVStorage(fileName string) (*CSVStorage, error) {
 }
 
 func (s *CSVStorage) ExecuteSelect(stmt *ast.SelectStatement) {
-	fmt.Printf("\n--- Resultado da Busca ---\n")
-
-	columnIndices := []int{}
-	if len(stmt.Columns) == 1 && stmt.Columns[0] == "*" {
-		for i := 0; i < len(s.Header); i++ {
-			columnIndices = append(columnIndices, i)
-		}
-	} else {
-		for _, colName := range stmt.Columns {
-			idx, ok := s.Header[strings.ToLower(colName)]
-			if ok {
-				columnIndices = append(columnIndices, idx)
-			}
+	var filtradas [][]string
+	for _, row := range s.Data {
+		if stmt.Condition == nil || s.evaluate(row, stmt.Condition) {
+			filtradas = append(filtradas, row)
 		}
 	}
 
-	for _, row := range s.Data {
-		// Agora passamos a Condition (que é uma Expression) para o novo avaliador
-		if stmt.Condition != nil {
-			if !s.evaluate(row, stmt.Condition) {
-				continue
+	if len(stmt.Functions) > 0 {
+		total := s.Data
+		if stmt.IgnoreEmpty != "" {
+			colIdx, ok := s.Header[strings.ToLower(stmt.IgnoreEmpty)]
+			if ok {
+				var semVazio [][]string
+				for _, row := range s.Data {
+					if colIdx < len(row) && strings.TrimSpace(row[colIdx]) != "" {
+						semVazio = append(semVazio, row)
+					}
+				}
+				total = semVazio
 			}
 		}
 
+		fmt.Printf("\n--- Resultado ---\n")
+		for _, fn := range stmt.Functions {
+			s.executarFuncao(fn, filtradas, total)
+		}
+		return
+	}
+
+	columnIndices := s.resolverColunas(stmt.Columns)
+
+	if stmt.OrderBy != "" {
+		colIdx, ok := s.Header[strings.ToLower(stmt.OrderBy)]
+		if ok {
+			sort.SliceStable(filtradas, func(i, j int) bool {
+				a := strings.TrimSpace(filtradas[i][colIdx])
+				b := strings.TrimSpace(filtradas[j][colIdx])
+
+				fa, errA := strconv.ParseFloat(a, 64)
+				fb, errB := strconv.ParseFloat(b, 64)
+				if errA == nil && errB == nil {
+					return fa < fb
+				}
+
+				da, errDA := time.Parse(layoutBR, a)
+				db, errDB := time.Parse(layoutBR, b)
+				if errDA == nil && errDB == nil {
+					return da.Before(db)
+				}
+
+				return a < b
+			})
+		}
+	}
+
+	fmt.Printf("\n--- Resultado da Busca ---\n")
+	for _, row := range filtradas {
 		for _, idx := range columnIndices {
 			fmt.Printf("%s \t", row[idx])
 		}
 		fmt.Println()
 	}
+	fmt.Printf("Total: %d linha(s)\n", len(filtradas))
 }
 
-// evaluate é a função recursiva que "navega" pela árvore do AST
+func (s *CSVStorage) executarFuncao(fn ast.FunctionCall, filtradas [][]string, total [][]string) {
+	switch fn.Name {
+
+	case "CONTE":
+		if fn.Inner != nil && fn.Inner.Name == "DIFERENTES" {
+			colIdx, ok := s.Header[strings.ToLower(fn.Inner.Column)]
+			if !ok {
+				fmt.Printf("CONTE(DIFERENTES): coluna '%s' não encontrada\n", fn.Inner.Column)
+				return
+			}
+			fmt.Printf("CONTE(DIFERENTES(%s)): %d\n", fn.Inner.Column, ConteDiferentes(filtradas, colIdx))
+		} else {
+			fmt.Printf("CONTE: %d\n", Conte(filtradas))
+		}
+
+	case "DIFERENTES":
+		colIdx, ok := s.Header[strings.ToLower(fn.Column)]
+		if !ok {
+			fmt.Printf("DIFERENTES: coluna '%s' não encontrada\n", fn.Column)
+			return
+		}
+		valores := Diferentes(filtradas, colIdx)
+		fmt.Printf("DIFERENTES(%s): %d valor(es)\n", fn.Column, len(valores))
+		for _, v := range valores {
+			fmt.Printf("  - %s\n", v)
+		}
+
+	case "MAX":
+		colIdx, ok := s.Header[strings.ToLower(fn.Column)]
+		if !ok {
+			fmt.Printf("MAX: coluna '%s' não encontrada\n", fn.Column)
+			return
+		}
+		val, err := Max(filtradas, colIdx)
+		if err != nil {
+			fmt.Printf("MAX(%s): %v\n", fn.Column, err)
+			return
+		}
+		fmt.Printf("MAX(%s): %g\n", fn.Column, val)
+
+	case "MIN":
+		colIdx, ok := s.Header[strings.ToLower(fn.Column)]
+		if !ok {
+			fmt.Printf("MIN: coluna '%s' não encontrada\n", fn.Column)
+			return
+		}
+		val, err := Min(filtradas, colIdx)
+		if err != nil {
+			fmt.Printf("MIN(%s): %v\n", fn.Column, err)
+			return
+		}
+		fmt.Printf("MIN(%s): %g\n", fn.Column, val)
+
+	case "MAX_DATA":
+		colIdx, ok := s.Header[strings.ToLower(fn.Column)]
+		if !ok {
+			fmt.Printf("MAX_DATA: coluna '%s' não encontrada\n", fn.Column)
+			return
+		}
+		val, err := MaxData(filtradas, colIdx)
+		if err != nil {
+			fmt.Printf("MAX_DATA(%s): %v\n", fn.Column, err)
+			return
+		}
+		fmt.Printf("MAX_DATA(%s): %s\n", fn.Column, val)
+
+	case "MIN_DATA":
+		colIdx, ok := s.Header[strings.ToLower(fn.Column)]
+		if !ok {
+			fmt.Printf("MIN_DATA: coluna '%s' não encontrada\n", fn.Column)
+			return
+		}
+		val, err := MinData(filtradas, colIdx)
+		if err != nil {
+			fmt.Printf("MIN_DATA(%s): %v\n", fn.Column, err)
+			return
+		}
+		fmt.Printf("MIN_DATA(%s): %s\n", fn.Column, val)
+
+	case "PORCENTAGEM":
+		pct := Porcentagem(filtradas, total)
+		fmt.Printf("PORCENTAGEM: %.2f%% (%d de %d)\n", pct, len(filtradas), len(total))
+	}
+}
+
+func (s *CSVStorage) resolverColunas(columns []string) []int {
+	var indices []int
+	if len(columns) == 1 && columns[0] == "*" {
+		ordenados := make([]string, len(s.Header))
+		for nome, idx := range s.Header {
+			ordenados[idx] = nome
+		}
+		for i := range ordenados {
+			indices = append(indices, i)
+		}
+		return indices
+	}
+	for _, colName := range columns {
+		idx, ok := s.Header[strings.ToLower(colName)]
+		if ok {
+			indices = append(indices, idx)
+		} else {
+			fmt.Printf("Aviso: coluna '%s' não encontrada\n", colName)
+		}
+	}
+	return indices
+}
+
 func (s *CSVStorage) evaluate(row []string, expr ast.Expression) bool {
 	switch e := expr.(type) {
-
-	// Caso seja uma operação lógica (E / OU)
 	case *ast.LogicalExpression:
 		left := s.evaluate(row, e.Left)
 		right := s.evaluate(row, e.Right)
-
 		if e.Operator == "E" {
 			return left && right
 		}
 		if e.Operator == "OU" {
 			return left || right
 		}
-
-	// Caso seja uma comparação simples (idade > 20, municipio DENTRO ...)
 	case *ast.ComparisonExpression:
 		return s.evaluateComparison(row, e)
 	}
-
 	return false
 }
 
@@ -104,6 +240,13 @@ func (s *CSVStorage) evaluateComparison(row []string, cond *ast.ComparisonExpres
 	}
 
 	valorCSV := strings.TrimSpace(row[colIdx])
+
+	if cond.Operator == "VAZIO" {
+		return valorCSV == ""
+	}
+	if cond.Operator == "NAO_VAZIO" {
+		return valorCSV != ""
+	}
 
 	if cond.Operator == "DENTRO" || cond.Operator == "EM" {
 		lista, ok := cond.Right.([]string)
@@ -120,7 +263,6 @@ func (s *CSVStorage) evaluateComparison(row []string, cond *ast.ComparisonExpres
 
 	valP, errP := strconv.ParseFloat(valorCSV, 64)
 	valC, errC := strconv.ParseFloat(fmt.Sprintf("%v", cond.Right), 64)
-
 	if errP == nil && errC == nil {
 		switch cond.Operator {
 		case ">":
@@ -138,11 +280,8 @@ func (s *CSVStorage) evaluateComparison(row []string, cond *ast.ComparisonExpres
 		}
 	}
 
-	// Tenta comparação de data (formato DD/MM/AAAA)
-	layoutBR := "02/01/2006"
 	dataP, errDP := time.Parse(layoutBR, valorCSV)
 	dataC, errDC := time.Parse(layoutBR, fmt.Sprintf("%v", cond.Right))
-
 	if errDP == nil && errDC == nil {
 		switch cond.Operator {
 		case ">":
@@ -167,5 +306,6 @@ func (s *CSVStorage) evaluateComparison(row []string, cond *ast.ComparisonExpres
 	case "!=":
 		return valorCSV != valorFiltro
 	}
+
 	return false
 }
