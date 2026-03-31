@@ -9,9 +9,9 @@ import (
 const (
 	_ int = iota
 	LOWEST
-	OR      // OU
-	AND     // E
-	COMPARE // ==, !=, >, <, EM/DENTRO
+	OR
+	AND
+	COMPARE
 )
 
 type Parser struct {
@@ -69,8 +69,8 @@ func (p *Parser) parseSelectStatement() *ast.SelectStatement {
 			return nil
 		}
 		for p.peekTokenIs(lexer.COMMA) {
-			p.nextToken() // consome ','
-			p.nextToken() // move para próximo item
+			p.nextToken()
+			p.nextToken()
 			if err := p.readColumnOrFunction(stmt); err != nil {
 				p.errors = append(p.errors, err.Error())
 				return nil

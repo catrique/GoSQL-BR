@@ -10,7 +10,6 @@ import (
 )
 
 func main() {
-	// Iniciamos o motor
 	motor := engine.New()
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -28,7 +27,6 @@ func main() {
 			break
 		}
 
-		// 1. Analisa
 		l := lexer.New(input)
 		p := parser.New(l)
 		program := p.ParseProgram()
@@ -38,7 +36,6 @@ func main() {
 			continue
 		}
 
-		// 2. Executa
 		err := motor.Executar(program)
 		if err != nil {
 			fmt.Println("Erro de execução:", err)
